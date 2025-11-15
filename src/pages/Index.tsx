@@ -8,7 +8,7 @@
  * - AI-powered personalized explanations
  * - Interactive mathematical visualizations (Wolfram + Desmos)
  * - Mini quizzes for mastery verification
- * - Territory capture system encouraging exploration
+ * - Territory capture system encourreaging exploration
  * 
  * Tech Stack:
  * - React + TypeScript
