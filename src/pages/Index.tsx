@@ -125,18 +125,29 @@ export default function Index() {
       const topicIds = getTopicsFromQuery(query);
       const newlyUnlockedTopics: string[] = [];
 
+      console.log('🔍 Search Query:', query);
+      console.log('🎯 Found Topics:', topicIds);
+      console.log('🔒 Currently Unlocked:', unlockedTopics);
+
       // Unlock topics that match the query
       if (topicIds.length > 0) {
-        setTopics(prevTopics =>
-          prevTopics.map(topic => {
-            if (topicIds.includes(topic.id) && !topic.unlocked && !capturedTopics.includes(topic.id)) {
-              newlyUnlockedTopics.push(topic.id);
-              setUnlockedTopics(prev => [...new Set([...prev, topic.id])]); // Save to persistence
-              return { ...topic, unlocked: true };
-            }
-            return topic;
-          })
+        // First, collect which topics will be newly unlocked
+        const newlyUnlockable = topicIds.filter(topicId =>
+          !unlockedTopics.includes(topicId) && !capturedTopics.includes(topicId)
         );
+
+        console.log('✨ Newly Unlockable Topics:', newlyUnlockable);
+
+        if (newlyUnlockable.length > 0) {
+          newlyUnlockedTopics.push(...newlyUnlockable);
+          setUnlockedTopics(prev => [...new Set([...prev, ...newlyUnlockable])]); // Save to persistence
+          // The useEffect will handle updating the topics state based on unlockedTopics changes
+          console.log('🚀 Unlocked Topics Now:', [...unlockedTopics, ...newlyUnlockable]);
+        } else {
+          console.log('🚫 No topics unlocked - already unlocked or captured');
+        }
+      } else {
+        console.log('❌ No topics found for this query');
       }
 
       // Get AI snippet response for the question

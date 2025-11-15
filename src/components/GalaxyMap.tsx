@@ -83,21 +83,24 @@ export default function GalaxyMap({ topics, onTopicClick, capturedTopics }: Gala
       {/* SVG for connection lines */}
       <svg className="absolute inset-0 w-full h-full pointer-events-none">
         <g transform="translate(50%, 50%)">
-          {getConnectionLines().map((line, index) => (
-            <motion.line
-              key={index}
-              x1={line.x1}
-              y1={line.y1}
-              x2={line.x2}
-              y2={line.y2}
-              stroke={line.active ? '#3b82f6' : '#334155'}
-              strokeWidth={line.active ? 2 : 1}
-              strokeDasharray={line.active ? '0' : '5,5'}
-              initial={{ pathLength: 0, opacity: 0 }}
-              animate={{ pathLength: 1, opacity: line.active ? 0.6 : 0.3 }}
-              transition={{ duration: 1, delay: index * 0.1 }}
-            />
-          ))}
+          {getConnectionLines().map((line, index) => {
+            const scale = 0.375; // Same scaling as topic positions
+            return (
+              <motion.line
+                key={index}
+                x1={line.x1 * scale}
+                y1={line.y1 * scale}
+                x2={line.x2 * scale}
+                y2={line.y2 * scale}
+                stroke={line.active ? '#3b82f6' : '#334155'}
+                strokeWidth={line.active ? 1.2 : 0.6}
+                strokeDasharray={line.active ? '0' : '3,3'}
+                initial={{ pathLength: 0, opacity: 0 }}
+                animate={{ pathLength: 1, opacity: line.active ? 0.5 : 0.25 }}
+                transition={{ duration: 1, delay: index * 0.08 }}
+              />
+            );
+          })}
         </g>
       </svg>
 
@@ -154,10 +157,14 @@ interface TopicNodeProps {
 }
 
 function TopicNode({ topic, isCaptured, isUnlocked, onClick }: TopicNodeProps) {
-  // Calculate position as percentage from center
+  // Scale topic positions to fit and spread across galaxy view (pos range ~500 → ~281)
+  const scale = 0.5625; // 56.25% scale = 150% of previous distance (187.5 × 1.5 = 281px)
+  const scaledX = topic.position.x * scale;
+  const scaledY = topic.position.y * scale;
+
   const style = {
-    left: `calc(50% + ${topic.position.x}px)`,
-    top: `calc(50% + ${topic.position.y}px)`,
+    left: `calc(50% + ${scaledX}px)`,
+    top: `calc(50% + ${scaledY}px)`,
     transform: 'translate(-50%, -50%)',
   };
 
@@ -187,11 +194,11 @@ function TopicNode({ topic, isCaptured, isUnlocked, onClick }: TopicNodeProps) {
         />
       )}
 
-      {/* Main node circle */}
+      {/* Main node circle - SMALL SIZE as requested */}
       <motion.div
         className={cn(
-          'relative w-20 h-20 rounded-full flex items-center justify-center',
-          'border-2 transition-all duration-300',
+          'relative w-12 h-12 rounded-full flex items-center justify-center',
+          'border transition-all duration-300',
           isCaptured && 'border-white shadow-lg',
           isUnlocked && !isCaptured && 'border-blue-400',
           !isUnlocked && 'border-slate-600 opacity-50'
@@ -212,13 +219,13 @@ function TopicNode({ topic, isCaptured, isUnlocked, onClick }: TopicNodeProps) {
         }
         transition={{ duration: 2, repeat: Infinity }}
       >
-        {/* Icon based on status */}
+        {/* Icon based on status - PROPER SIZE FOR SMALL STARS */}
         {isCaptured ? (
-          <CheckCircle2 className="w-8 h-8 text-white" />
+          <CheckCircle2 className="w-6 h-6 text-white" />
         ) : isUnlocked ? (
-          <Sparkles className="w-8 h-8 text-blue-300" />
+          <Sparkles className="w-6 h-6 text-blue-300" />
         ) : (
-          <Lock className="w-8 h-8 text-slate-500" />
+          <Lock className="w-6 h-6 text-slate-500" />
         )}
 
         {/* Pulsing ring for unlocked topics */}
