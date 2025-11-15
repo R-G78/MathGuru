@@ -81,3 +81,47 @@ export interface WolframResponse {
     }>;
   };
 }
+
+/**
+ * Represents a visual parameter for interactive lessons
+ */
+export interface VisualParameter {
+  name: string;
+  min: number;
+  max: number;
+  default: number;
+  label: string;
+}
+
+/**
+ * Represents a lesson section with content and visualization
+ */
+export interface LessonSection {
+  title: string;
+  content: string;
+  visualType: 'interactive-graph' | 'image-interactive' | 'scenario-visualization' | 'static-image';
+  visualData: any; // Can be extended based on visualType
+}
+
+/**
+ * Represents a complete topic lesson with sections and interactive elements
+ */
+export interface TopicLesson {
+  topicId: string;
+  title: string;
+  introduction: string;
+  sections: LessonSection[];
+  keyTakeaways: string[];
+}
+
+/**
+ * User progress persistence interface
+ */
+export interface PersistedProgress {
+  capturedTopics: string[];
+  unlockedTopics: string[];
+  quizAttempts: Record<string, number>; // topicId -> attempt count
+  quizScores: Record<string, number>; // topicId -> highest score
+  lastActivity: number; // timestamp
+  completionRate: number;
+}

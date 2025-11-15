@@ -14,23 +14,47 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { QuizQuestion } from '@/lib/types';
-import { CheckCircle2, XCircle, Lightbulb } from 'lucide-react';
+import { CheckCircle2, XCircle, Lightbulb, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface QuizProps {
   questions: QuizQuestion[];
-  onComplete: (score: number) => void;
+  onComplete: (score: number, retry?: boolean) => void;
+  allowRetry?: boolean;
+  onRetry?: () => void;
 }
 
-export default function Quiz({ questions, onComplete }: QuizProps) {
+export default function Quiz({ questions, onComplete, allowRetry = true }: QuizProps) {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [score, setScore] = useState(0);
+  const [quizCompleted, setQuizCompleted] = useState(false);
+  const [finalScore, setFinalScore] = useState(0);
+
+  // Guard against empty or invalid questions array
+  if (!questions || questions.length === 0) {
+    return (
+      <Card className="p-8 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-6xl mb-4">⚠️</div>
+          <h3 className="text-lg font-semibold mb-2">Quiz Not Available</h3>
+          <p className="text-muted-foreground">No quiz questions are available for this topic.</p>
+          <Button
+            onClick={() => onComplete(100)}
+            className="mt-4"
+            variant="outline"
+          >
+            Skip Quiz
+          </Button>
+        </div>
+      </Card>
+    );
+  }
 
   const currentQuestion = questions[currentQuestionIndex];
   const isLastQuestion = currentQuestionIndex === questions.length - 1;
-  const isCorrect = selectedAnswer === currentQuestion.correctAnswer;
+  const isCorrect = currentQuestion ? selectedAnswer === currentQuestion.correctAnswer : false;
 
   /**
    * Handle answer selection

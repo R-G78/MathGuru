@@ -1,13 +1,11 @@
 /**
  * MathVisualization Component
- * 
- * Interactive mathematical visualizations combining:
- * - Wolfram Alpha API for computational graphs
- * - Desmos API for interactive graphing
- * - Custom interactive controls for parameter manipulation
- * 
+ *
+ * Interactive mathematical visualizations with custom interactive controls
+ * for parameter manipulation. Uses SVG for graph plotting with mathjs for evaluation.
+ *
  * Allows learners to explore mathematical concepts by adjusting parameters
- * and seeing real-time visual feedback
+ * and seeing real-time visual feedback.
  */
 
 import { useState, useEffect } from 'react';
@@ -16,6 +14,7 @@ import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Loader2, RefreshCw } from 'lucide-react';
+import * as math from 'mathjs';
 
 interface MathVisualizationProps {
   topicId: string;
@@ -59,19 +58,9 @@ export default function MathVisualization({ topicId, topicName }: MathVisualizat
   }, [topicId]);
 
   /**
-   * Generate Wolfram Alpha query URL for the current parameters
+   * Generate mathematical expression string
    */
-  const getWolframUrl = () => {
-    const query = config.wolframQuery(parameters);
-    // In production, use Wolfram Alpha API
-    // For demo, we'll use Wolfram Alpha's simple API
-    return `https://www.wolframalpha.com/input?i=${encodeURIComponent(query)}`;
-  };
-
-  /**
-   * Generate Desmos calculator expression
-   */
-  const getDesmosExpression = () => {
+  const getExpression = () => {
     return config.desmosExpression(parameters);
   };
 
@@ -139,41 +128,33 @@ export default function MathVisualization({ topicId, topicName }: MathVisualizat
         <div className="bg-slate-50 rounded-lg p-6 mb-4">
           <div className="aspect-square max-w-md mx-auto bg-white rounded border-2 border-slate-200 relative overflow-hidden">
             {/* Simple coordinate system */}
-            <svg className="w-full h-full" viewBox="-10 -10 20 20">
+            <svg className="w-full h-full" viewBox="-10 -10 20 20" width="100%" height="100%">
               {/* Grid */}
               <defs>
-                <pattern id="grid" width="2" height="2" patternUnits="userSpaceOnUse">
+                <pattern id={`grid-${topicId}`} width="2" height="2" patternUnits="userSpaceOnUse">
                   <path d="M 2 0 L 0 0 0 2" fill="none" stroke="#e2e8f0" strokeWidth="0.1" />
                 </pattern>
               </defs>
-              <rect x="-10" y="-10" width="20" height="20" fill="url(#grid)" />
-              
+
+              {/* Background */}
+              <rect x="-10" y="-10" width="20" height="20" fill={`url(#grid-${topicId})`} />
+
               {/* Axes */}
-              <line x1="-10" y1="0" x2="10" y2="0" stroke="#94a3b8" strokeWidth="0.1" />
-              <line x1="0" y1="-10" x2="0" y2="10" stroke="#94a3b8" strokeWidth="0.1" />
-              
-              {/* Function plot */}
-              <GraphPlot expression={getDesmosExpression()} parameters={parameters} />
+              <line x1="-10" y1="0" x2="10" y2="0" stroke="#94a3b8" strokeWidth="0.15" />
+              <line x1="0" y1="-10" x2="0" y2="10" stroke="#94a3b8" strokeWidth="0.15" />
+
+              {/* Function plot - wrapped in g element to prevent transform issues */}
+              <g>
+                <GraphPlot expression={getExpression()} parameters={parameters} />
+              </g>
             </svg>
           </div>
-          
+
           <div className="mt-4 text-center">
             <p className="text-sm font-mono bg-blue-50 text-blue-700 px-4 py-2 rounded inline-block">
-              {getDesmosExpression()}
+              {getExpression()}
             </p>
           </div>
-        </div>
-
-        {/* Wolfram Alpha link */}
-        <div className="text-center">
-          <a
-            href={getWolframUrl()}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-blue-600 hover:underline inline-flex items-center gap-2"
-          >
-            View detailed analysis on Wolfram Alpha →
-          </a>
         </div>
       </Card>
 
@@ -206,8 +187,8 @@ function GraphPlot({
 }) {
   // Generate points for the function
   const points: Array<{ x: number; y: number }> = [];
-  
-  // Parse expression and evaluate (simplified for demo)
+
+  // Parse expression and evaluate
   for (let x = -10; x <= 10; x += 0.1) {
     try {
       const y = evaluateExpression(expression, { ...parameters, x });
@@ -222,14 +203,14 @@ function GraphPlot({
   if (points.length === 0) return null;
 
   // Create SVG path
-  const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+  const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ');
 
   return (
     <path
       d={pathData}
       fill="none"
       stroke="#3b82f6"
-      strokeWidth="0.2"
+      strokeWidth="0.3"
       strokeLinecap="round"
       strokeLinejoin="round"
     />
@@ -237,21 +218,27 @@ function GraphPlot({
 }
 
 /**
- * Simple expression evaluator
- * Evaluates mathematical expressions with given parameters
+ * Expression evaluator using mathjs
+ * Parses mathematical expressions and evaluates with given parameters
  */
 function evaluateExpression(expr: string, params: Record<string, number>): number {
-  // Replace parameters with their values
-  let evaluated = expr;
-  Object.entries(params).forEach(([key, value]) => {
-    evaluated = evaluated.replace(new RegExp(key, 'g'), value.toString());
-  });
-
-  // Simple evaluation (in production, use a proper math parser)
   try {
-    // eslint-disable-next-line no-eval
-    return eval(evaluated);
-  } catch {
+    // Extract the right side of the equation (after 'y =')
+    const equation = expr.replace(/^y\s*=\s*/, '').trim();
+
+    // Replace ^ with ** for JavaScript compatibility
+    const jsExpression = equation.replace(/\^/g, '**');
+
+    // Create evaluation scope with parameters
+    const scope: Record<string, any> = { ...params };
+
+    // Evaluate using mathjs with safer parsing
+    const node = math.parse(jsExpression);
+    const result = node.evaluate(scope);
+
+    return typeof result === 'number' ? result : NaN;
+  } catch (error) {
+    console.error('Math evaluation error:', error);
     return NaN;
   }
 }

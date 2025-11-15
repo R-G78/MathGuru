@@ -28,28 +28,70 @@ import GalaxyMap from '@/components/GalaxyMap';
 import LearningSession from '@/components/LearningSession';
 import { QUADRATICS_CLUSTER, getTopicById, shouldUnlockTopic } from '@/lib/topics';
 import { Topic } from '@/lib/types';
-import { Sparkles, Trophy, BookOpen, MessageSquare } from 'lucide-react';
+import {
+  loadProgress, saveProgress, getDefaultProgress, updateProgress, recordQuizResult,
+  clearProgress
+} from '@/lib/progress-service';
+import { Sparkles, Trophy, BookOpen, MessageSquare, Bot, RefreshCw } from 'lucide-react';
+import { generateChatResponse } from '@/lib/ai-service';
+import { getTopicsFromQuery } from '@/lib/topics';
+
+// AI Response interface
+interface AIResponse {
+  query: string;
+  response: string;
+  timestamp: number;
+  unlockedTopics?: string[];
+}
 
 export default function Index() {
   // Application state
   const [topics, setTopics] = useState<Topic[]>(QUADRATICS_CLUSTER);
   const [capturedTopics, setCapturedTopics] = useState<string[]>([]);
+  const [unlockedTopics, setUnlockedTopics] = useState<string[]>([]);
   const [currentTopic, setCurrentTopic] = useState<Topic | null>(null);
   const [showWelcome, setShowWelcome] = useState(true);
   const [userQuery, setUserQuery] = useState('');
+  const [aiResponse, setAiResponse] = useState<AIResponse | null>(null);
+  const [showAiModal, setShowAiModal] = useState(false);
+  const [isLoadingAI, setIsLoadingAI] = useState(false);
 
   /**
-   * Update topic unlock status based on captured territories
+   * Load saved progress on component mount
+   */
+  useEffect(() => {
+    const savedProgress = loadProgress();
+    if (savedProgress) {
+      setCapturedTopics(savedProgress.capturedTopics);
+      setUnlockedTopics(savedProgress.unlockedTopics);
+    } else {
+      // First time user - set default state
+      setUnlockedTopics(['quadratic-equations']); // Quadratic equations unlocked by default
+    }
+  }, []);
+
+  /**
+   * Save progress whenever it changes
+   */
+  useEffect(() => {
+    updateProgress({
+      capturedTopics,
+      unlockedTopics
+    });
+  }, [capturedTopics, unlockedTopics]);
+
+  /**
+   * Update topic unlock status based on captured territories and saved unlocked topics
    */
   useEffect(() => {
     setTopics((prevTopics) =>
       prevTopics.map((topic) => ({
         ...topic,
-        unlocked: shouldUnlockTopic(topic.id, capturedTopics) || topic.unlocked,
+        unlocked: shouldUnlockTopic(topic.id, capturedTopics) || unlockedTopics.includes(topic.id),
         captured: capturedTopics.includes(topic.id),
       }))
     );
-  }, [capturedTopics]);
+  }, [capturedTopics, unlockedTopics]);
 
   /**
    * Handle topic selection from galaxy map
@@ -69,42 +111,58 @@ export default function Index() {
   };
 
   /**
-   * Handle user query submission (natural language topic request)
+   * Handle user query submission - discovers and unlocks topics based on questions
    */
-  const handleQuerySubmit = (e: React.FormEvent) => {
+  const handleQuerySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userQuery.trim()) return;
 
-    // Simple keyword matching to find relevant topic
-    // In production, this would use NLP/AI to understand the query
-    const query = userQuery.toLowerCase();
-    let matchedTopic: Topic | null = null;
+    const query = userQuery.trim();
+    setIsLoadingAI(true);
 
-    // Check for topic keywords
-    if (query.includes('quadratic formula') || query.includes('formula')) {
-      matchedTopic = getTopicById('quadratic-formula') || null;
-    } else if (query.includes('graph') || query.includes('parabola')) {
-      matchedTopic = getTopicById('parabola-graphs') || null;
-    } else if (query.includes('vertex')) {
-      matchedTopic = getTopicById('vertex-form') || null;
-    } else if (query.includes('completing') || query.includes('square')) {
-      matchedTopic = getTopicById('completing-square') || null;
-    } else if (query.includes('discriminant')) {
-      matchedTopic = getTopicById('discriminant') || null;
-    } else if (query.includes('factor')) {
-      matchedTopic = getTopicById('factorization') || null;
-    } else if (query.includes('application') || query.includes('real world')) {
-      matchedTopic = getTopicById('real-world-applications') || null;
-    } else if (query.includes('complex') || query.includes('imaginary')) {
-      matchedTopic = getTopicById('complex-roots') || null;
-    } else {
-      // Default to quadratic equations
-      matchedTopic = getTopicById('quadratic-equations') || null;
-    }
+    try {
+      // Analyze query for math keywords to unlock matching topics
+      const topicIds = getTopicsFromQuery(query);
+      const newlyUnlockedTopics: string[] = [];
 
-    if (matchedTopic) {
-      setCurrentTopic(matchedTopic);
+      // Unlock topics that match the query
+      if (topicIds.length > 0) {
+        setTopics(prevTopics =>
+          prevTopics.map(topic => {
+            if (topicIds.includes(topic.id) && !topic.unlocked && !capturedTopics.includes(topic.id)) {
+              newlyUnlockedTopics.push(topic.id);
+              setUnlockedTopics(prev => [...new Set([...prev, topic.id])]); // Save to persistence
+              return { ...topic, unlocked: true };
+            }
+            return topic;
+          })
+        );
+      }
+
+      // Get AI snippet response for the question
+      const response = await generateChatResponse(query, true); // isDiscovery=true for shorter snippets
+
+      // Set AI response state and show modal
+      setAiResponse({
+        query,
+        response,
+        timestamp: Date.now(),
+        unlockedTopics: newlyUnlockedTopics
+      });
       setUserQuery('');
+      setShowAiModal(true);
+    } catch (error) {
+      console.error('Error getting AI response:', error);
+      // Fallback - show error in modal
+      setAiResponse({
+        query,
+        response: "I'm sorry, I couldn't process your question right now. Please try again later.",
+        timestamp: Date.now()
+      });
+      setUserQuery('');
+      setShowAiModal(true);
+    } finally {
+      setIsLoadingAI(false);
     }
   };
 
@@ -189,19 +247,19 @@ export default function Index() {
                   <ul className="space-y-2 text-sm text-slate-700">
                     <li className="flex items-start gap-2">
                       <span className="text-blue-600 font-bold">1.</span>
-                      <span>Click on an unlocked topic (glowing stars) or ask a question below</span>
+                      <span>Ask questions about math topics to discover and unlock them</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="text-blue-600 font-bold">2.</span>
-                      <span>Learn with AI explanations and interactive visualizations</span>
+                      <span>Get quick AI explanations and see unlocked topics in the galaxy</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="text-blue-600 font-bold">3.</span>
-                      <span>Complete a mini quiz to capture the territory</span>
+                      <span>Click on glowing stars to dive deep with full lessons, quizzes, and visualizations</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="text-blue-600 font-bold">4.</span>
-                      <span>Unlock connected topics and continue exploring!</span>
+                      <span>Pass quizzes to capture territories and unlock connected topics!</span>
                     </li>
                   </ul>
                 </div>
@@ -273,16 +331,20 @@ export default function Index() {
               <Input
                 value={userQuery}
                 onChange={(e) => setUserQuery(e.target.value)}
-                placeholder="Ask me anything... e.g., 'Teach me the quadratic formula' or 'I didn't understand parabola graphs'"
+                placeholder="Ask questions to discover and unlock math topics... e.g., 'What is the Pythagorean theorem?'"
                 className="flex-1 bg-white/90 text-slate-900 placeholder:text-slate-500"
               />
-              <Button type="submit" size="lg">
-                <MessageSquare className="w-4 h-4 mr-2" />
-                Ask
+              <Button type="submit" size="lg" disabled={isLoadingAI}>
+                {isLoadingAI ? (
+                  <span className="animate-spin mr-2">⏳</span>
+                ) : (
+                  <Sparkles className="w-4 h-4 mr-2" />
+                )}
+                {isLoadingAI ? 'Thinking...' : 'Ask & Discover'}
               </Button>
             </form>
             <p className="text-xs text-blue-200 mt-2">
-              💡 Try: "teach me quadratic formula", "explain vertex form", "what are complex roots"
+              💡 Ask about any math topic to unlock it: "What are quadratic equations?", "Explain derivatives", "How do matrices work?"
             </p>
           </Card>
         </motion.div>
@@ -309,6 +371,137 @@ export default function Index() {
             onComplete={handleLearningComplete}
             onClose={() => setCurrentTopic(null)}
           />
+        )}
+      </AnimatePresence>
+
+      {/* AI Response Modal */}
+      <AnimatePresence>
+        {showAiModal && aiResponse && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col"
+            >
+              {/* Header */}
+              <div className="p-6 border-b bg-gradient-to-r from-blue-50 to-purple-50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                      <Bot className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold text-slate-900">AI Math Tutor</h2>
+                      <p className="text-sm text-slate-600">
+                        {new Date(aiResponse.timestamp).toLocaleTimeString()}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowAiModal(false)}
+                  >
+                    ✕
+                  </Button>
+                </div>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {/* User Query */}
+                <Card className="p-4 bg-slate-50 border-slate-200">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 bg-slate-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <span className="text-white text-sm font-semibold">You</span>
+                    </div>
+                    <div>
+                      <p className="text-slate-900 font-medium">Your Question</p>
+                      <p className="text-slate-700 mt-1">{aiResponse.query}</p>
+                    </div>
+                  </div>
+                </Card>
+
+                {/* Unlocked Topics Notification */}
+                {aiResponse.unlockedTopics && aiResponse.unlockedTopics.length > 0 && (
+                  <Card className="p-4 bg-green-50 border-green-200">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                        <Sparkles className="w-5 h-5 text-white" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-slate-900 font-medium text-green-800">🎉 Topics Unlocked!</p>
+                        <p className="text-slate-700 mt-1">
+                          Based on your question, I've unlocked the following math topics for you to explore:
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {aiResponse.unlockedTopics.map(topicId => {
+                            const topic = getTopicById(topicId);
+                            return topic ? (
+                              <Button
+                                key={topicId}
+                                variant="outline"
+                                size="sm"
+                                className="text-xs"
+                                style={{ borderColor: topic.color, color: topic.color }}
+                                onClick={() => {
+                                  setCurrentTopic(topic);
+                                  setShowAiModal(false);
+                                }}
+                              >
+                                ⭐ {topic.name}
+                              </Button>
+                            ) : null;
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                )}
+
+                {/* AI Response */}
+                <Card className="p-4 bg-blue-50 border-blue-200">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <Bot className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-slate-900 font-medium">AI Quick Explanation</p>
+                      <div className="text-slate-700 mt-1 prose prose-sm max-w-none">
+                        {aiResponse.response.split('\n').map((line, index) => (
+                          <p key={index} className="mb-3 last:mb-0 leading-relaxed">
+                            {line}
+                          </p>
+                        ))}
+                      </div>
+                      <div className="mt-3 p-3 bg-blue-100 rounded-lg">
+                        <p className="text-sm text-blue-800">
+                          💡 This is a quick overview. Click on an unlocked topic above to dive deep with interactive explanations, visualizations, and quizzes!
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+
+              {/* Footer */}
+              <div className="p-6 border-t bg-slate-50 flex justify-between items-center">
+                <div className="flex items-center gap-2 text-sm text-slate-600">
+                  <Bot className="w-4 h-4" />
+                  Powered by AI • Ask another question!
+                </div>
+                <Button onClick={() => setShowAiModal(false)}>
+                  Ask Another Question
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

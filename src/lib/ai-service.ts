@@ -1,9 +1,58 @@
 /**
- * AI Service for generating personalized math explanations
- * Integrates with OpenAI API to create adaptive learning content
+ * AI Service for generating personalized math explanations and chat responses
+ * Integrates with OpenAI API to create adaptive learning content and conversational AI
  */
 
+import OpenAI from 'openai';
 import { AIExplanation } from './types';
+
+/**
+ * Local LLM configuration for Ollama or other local servers
+ * Point to http://localhost:11434 for Ollama or another local server
+ */
+const LOCAL_LLM_BASE_URL = import.meta.env.VITE_LOCAL_LLM_URL || 'http://localhost:11434';
+const MODEL_NAME = 'llama3.1:8b'; // or 'llama3.1' depending on how it's pulled
+
+// Initialize OpenAI client (fallback for OpenAI if needed)
+const openai = new OpenAI({
+  apiKey: import.meta.env.VITE_OPENAI_API_KEY,
+  dangerouslyAllowBrowser: true
+});
+
+/**
+ * Try to call local Llama LLM server
+ */
+async function callLocalLLM(prompt: string, isDiscovery: boolean = false): Promise<string | null> {
+  try {
+    const maxTokens = isDiscovery ? 200 : 500;
+
+    const response = await fetch(`${LOCAL_LLM_BASE_URL}/api/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: MODEL_NAME,
+        prompt: prompt,
+        stream: false,
+        options: {
+          temperature: 0.7,
+          num_predict: maxTokens,
+        }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Local LLM server error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.response || null;
+  } catch (error) {
+    console.warn('Local LLM call failed:', error);
+    return null;
+  }
+}
 
 /**
  * Generate an AI explanation for a math topic
@@ -241,4 +290,160 @@ export async function generateHint(question: string, options: string[]): Promise
   // In production, this would call OpenAI API for dynamic hints
   // For now, return a generic helpful hint
   return "Think about the key concepts we just learned. Try eliminating options that don't make sense first.";
+}
+
+/**
+ * Generate a conversational AI response to user's query
+ * Uses OpenAI API for natural language conversations about math
+ *
+ * @param userQuery - The user's question or message
+ * @param isDiscovery - If true, returns short snippet for topic discovery
+ * @returns Promise with AI's response as a string
+ */
+export async function generateChatResponse(userQuery: string, isDiscovery: boolean = false): Promise<string> {
+  try {
+    if (!import.meta.env.VITE_OPENAI_API_KEY) {
+      // Fallback to simulated response if no API key
+      return simulateChatResponse(userQuery, isDiscovery);
+    }
+
+    const systemPrompt = isDiscovery
+      ? "You are a concise AI math tutor. Provide brief, clear explanations (1-2 sentences) that introduce mathematical concepts. Keep responses under 150 words. Focus on giving enough information to understand the concept without overwhelming."
+      : "You are a friendly and knowledgeable AI math tutor. Help users understand mathematical concepts clearly and engagingly. Be conversational, encouraging, and use simple language. If the user asks about non-math topics, politely redirect back to math or explain how math relates to it.";
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content: systemPrompt
+        },
+        {
+          role: "user",
+          content: userQuery
+        }
+      ],
+      max_tokens: isDiscovery ? 200 : 500,
+      temperature: 0.7
+    });
+
+    return completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response right now.";
+  } catch (error) {
+    console.error('Error generating chat response:', error);
+    return simulateChatResponse(userQuery, isDiscovery);
+  }
+}
+
+/**
+ * Fallback simulated responses for demo when OpenAI API is unavailable
+ * Provides intelligent responses based on query analysis
+ * @param userQuery - The user's question
+ * @param isDiscovery - If true, returns short snippet responses
+ */
+function simulateChatResponse(userQuery: string, isDiscovery: boolean = false): string {
+  const query = userQuery.toLowerCase().trim();
+
+  // Greetings
+  if (query.match(/\b(hello|hi|hey|greetings|welcome)\b/)) {
+    return "Hello! 👋 I'm your AI math tutor, ready to help you explore the fascinating world of mathematics. What mathematical concept would you like to dive into today? You can ask about algebra, geometry, calculus, statistics, or any math topic! 🌟";
+  }
+
+  // Algebraic concepts
+  if (query.includes('linear equation')) {
+    return "A linear equation relates two variables with a straight-line graph. It has the form Ax + By = C, where solutions form an infinite line. To solve systems of linear equations, use substitution, elimination, or graphing methods. These appear in business for cost analysis and physics for motion! 📈";
+  }
+
+  if (query.includes('system') && query.includes('equation')) {
+    return "Systems of equations involve multiple equations with shared variables. You can solve them using substitution (replace one variable), elimination (add/subtract equations), or matrices. Each method has its advantages depending on the system's complexity. Ready for an example? 🔢";
+  }
+
+  if (query.includes('matrix') || query.includes('matrices')) {
+    return "Matrices are rectangular arrays of numbers, perfect for representing systems of equations, transformations, and data. You can add, multiply, and find determinants. Matrix multiplication AB ≠ BA (non-commutative). In computer graphics, they transform images and 3D models! 🎮";
+  }
+
+  if (query.includes('polynomial')) {
+    return "Polynomials are algebraic expressions like 3x³ - 2x² + x - 7. Degree indicates the highest power. Operations include addition, subtraction, multiplication, and division. The factor and remainder theorems help with factoring and roots. Understanding polynomials is key to calculus! 🧮";
+  }
+
+  // Geometric concepts
+  if (query.includes('triangle')) {
+    return "Triangles are fundamental 2D shapes with three sides and three angles totaling 180°. Py Lecture theorems (Pythagorean), trigonometric ratios (SOHCAHTOA), and area formulas (½ base × height) are essential. They're everywhere: from building roofs to computer graphics rendering. 🔺";
+  }
+
+  if (query.includes('circle')) {
+    return "A circle is all points equidistant from a center point with radius r. The equation x² + y² = r² represents the unit circle. Circumference = 2πr, area = πr². Circles appear in physics (circular motion), astronomy (orbits), and engineering (gears, wheels) 💫";
+  }
+
+  if (query.includes('volume') || query.includes('area')) {
+    return "Area measures 2D space while volume measures 3D space. For a rectangle: area = length × width, volume = area × height. Spheres: area = 4πr², volume = (4/3)πr³. These calculations are crucial in architecture, farming, and manufacturing! 📐";
+  }
+
+  // Trigonometric concepts
+  if (query.includes('trigonometry') || query.includes('trig')) {
+    return "Trigonometry studies relationships between angles and sides in triangles and circles. Key functions: sin(θ), cos(θ), tan(θ) = sin(θ)/cos(θ). Right triangle ratios: SOHCAHTOA. Unit circle with period 0-360° repeats every 2π radians. Essential for physics, astronomy, and engineering! 📏";
+  }
+
+  if (query.includes('sin') || query.includes('cos') || query.includes('tan')) {
+    return "Sin = opposite/hypotenuse, cos = adjacent/hypotenuse, tan = opposite/adjacent for right triangles. On the unit circle: sin(θ) = y-coordinate, cos(θ) = x-coordinate. Identities like sin²(θ) + cos²(θ) = 1, sin(2θ) = 2sinθcosθ are fundamental. Applications in waves, oscillations, and navigation! 🌊";
+  }
+
+  // Quadratic concepts (maintain existing)
+  if (query.includes('quadratic')) {
+    return "Quadratic equations like ax² + bx + c = 0 have degree 2. Solutions are roots where y = 0 on the parabola graph. Solve using: 1) Factoring (easy when a=1), 2) Quadratic formula x = (-b ± √(b²-4ac))/(2a), or 3) Completing the square. The discriminant b²-4ac reveals root nature! 📈";
+  }
+
+  if (query.includes('parabola')) {
+    return "Parabolas are U-shaped quadratic curves symmetrical through the vertex. Standard form y = ax² + bx + c, vertex form y = a(x-h)² + k. When a > 0 opens upward, when a < 0 opens downward. Vertex is the maximum/minimum point. Satellite dishes, fountains, and missile trajectories follow parabolic paths! 🚀";
+  }
+
+  if (query.includes('discriminant')) {
+    return "The discriminant Δ = b² - 4ac in the quadratic formula determines root characteristics. If Δ > 0: two distinct real roots, Δ = 0: one repeated real root, Δ < 0: two complex conjugate roots. This helps predict without solving, useful in physics for projectile landing points! 🎯";
+  }
+
+  // Calculus concepts
+  if (query.includes('derivative')) {
+    return "The derivative represents instantaneous rate of change. For f(x), f'(x) is the slope of the tangent line. Basic rules: constant rule, power rule, product/quotient/sum rules. Chain rule for composite functions. Applications: velocity (position derivative), optimization, and curve sketching! 📈";
+  }
+
+  if (query.includes('integral') || query.includes('integration')) {
+    return "Integration finds the total accumulated value, opposite of differentiation. Definite integrals ∫ f(x)dx from a to b represent areas. Fundamental theorem links differentiation and integration: d/dx[∫f(t)dt] = f(x). Applications in areas, volumes, and probability distributions! 📊";
+  }
+
+  if (query.includes('limit')) {
+    return "Limits define function behavior as x approaches a value - not the function value itself. Used for continuity, derivatives, and infinity. One-sided limits (from left/right) help with discontinuities. Key for understanding calculus foundations and singularities! 🔍";
+  }
+
+  // Statistics concepts
+  if (query.includes('probability')) {
+    return "Probability measures event likelihood from 0 (impossible) to 1 (certain). P(A) for single events, P(A and B) for joint, P(A or B) for either. Conditional probability P(A|B) and Bayes' theorem help update beliefs. Essential for decision-making under uncertainty! 🎲";
+  }
+
+  if (query.includes('statistics') || query.includes('mean') || query.includes('average')) {
+    return "Statistics summarizes data meaningfully. Measures of center: mean (average), median (middle value), mode (most frequent). Spread: standard deviation, range, variance. Normal distribution (bell curve) is fundamental with μ ± σ containing 68% of values. Z-scores standardize for comparison! 📊";
+  }
+
+  // Problem-solving hints
+  if (query.includes('solve') || query.includes('solution') || query.includes('answer')) {
+    return "When solving problems, break them into smaller steps. 1) Read carefully and identify given variables, 2) Determine what you're solving for, 3) Choose the appropriate method/algorithm, 4) Show all work step-by-step, 5) Verify your solution makes sense. Practice regularly builds mathematical intuition! 💡";
+  }
+
+  if (query.includes('prove') || query.includes('proof')) {
+    return "Mathematical proofs require logical reasoning. Common methods: direct proof (assume and deduce), proof by contradiction (show opposite leads to contradiction), inductive proof (base case + inductive step). Always start with definitions and work from known facts. Elegant proofs are both convincing and beautiful! ✨";
+  }
+
+  // Gratitude/thanks
+  if (query.includes('thank')) {
+    return "You're very welcome! Mathematics is like a grand puzzle with infinite pieces to explore. Each concept builds connections to others, creating a beautiful web of understanding. What other mathematical mysteries would you like to unravel? 🌟";
+  }
+
+  // Generic fallback with suggestions based on question type
+  if (query.includes('?')) {
+    return "That's a thoughtful question! While I can help with many mathematical topics, could you be more specific? For example, you might ask about algebraic equations, geometric shapes, calculus concepts, probability, or any math topic. I'm here to help you understand! 🔭";
+  }
+
+  if (query.length > 50) {
+    return "That's quite a detailed statement! If you're sharing a problem or concept, I can help break it down and explain the mathematical principles involved. You could also ask specific questions about algebra, geometry, calculus, statistics, or trigonometry. What would you like to explore? 🤔";
+  }
+
+  return "I'm here to help you with any mathematical questions! You can ask about algebra, geometry, calculus, statistics, trigonometry, or any math topic. Whether it's solving equations, understanding concepts, or applications in the real world, I'm ready to assist! What would you like to learn about? 🤓";
 }
