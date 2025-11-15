@@ -1,32 +1,47 @@
 /**
  * AI Service for generating personalized math explanations and chat responses
- * Integrates with OpenAI API to create adaptive learning content and conversational AI
+ * Primarily uses Ollama offline LLM server for privacy and local processing
  */
 
-import OpenAI from 'openai';
 import { AIExplanation } from './types';
 
 /**
- * Local LLM configuration for Ollama or other local servers
- * Point to http://localhost:11434 for Ollama or another local server
+ * Local LLM configuration for Ollama server
+ * Point to http://localhost:11434 for Ollama (default)
  */
-const LOCAL_LLM_BASE_URL = import.meta.env.VITE_LOCAL_LLM_URL || 'http://localhost:11434';
-const MODEL_NAME = 'llama3.1:8b'; // or 'llama3.1' depending on how it's pulled
+const OLLAMA_BASE_URL = import.meta.env.VITE_OLLAMA_URL || 'http://localhost:11434';
+const MODEL_NAME = 'llama3.1:8b'; // Official model name as pulled
 
-// Initialize OpenAI client (fallback for OpenAI if needed)
-const openai = new OpenAI({
-  apiKey: import.meta.env.VITE_OPENAI_API_KEY,
-  dangerouslyAllowBrowser: true
-});
+/**
+ * Check if Ollama is available (avoid network errors)
+ */
+async function isOllamaAvailable(): Promise<boolean> {
+  try {
+    const response = await fetch(`${OLLAMA_BASE_URL}/api/version`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(2000) // 2 second timeout
+    });
+    return response.ok;
+  } catch (error) {
+    // Silently handle connection failures
+    return false;
+  }
+}
 
 /**
  * Try to call local Llama LLM server
+ * Silently handles connection failures
  */
 async function callLocalLLM(prompt: string, isDiscovery: boolean = false): Promise<string | null> {
   try {
+    // Quick check if Ollama is available first
+    if (!(await isOllamaAvailable())) {
+      return null; // Silently return null, no network errors
+    }
+
     const maxTokens = isDiscovery ? 200 : 500;
 
-    const response = await fetch(`${LOCAL_LLM_BASE_URL}/api/generate`, {
+    const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -49,15 +64,69 @@ async function callLocalLLM(prompt: string, isDiscovery: boolean = false): Promi
     const data = await response.json();
     return data.response || null;
   } catch (error) {
-    console.warn('Local LLM call failed:', error);
+    // Silently handle all network failures - no console spam
     return null;
   }
 }
 
 /**
+ * Parse AI response in structured format and convert to AIExplanation
+ */
+function parseAIFStructuredResponse(response: string, topicName: string): AIExplanation {
+  try {
+    // Split response into sections
+    const sections = response.split(/\n{2,}/);
+
+    let explanation = '';
+    let keyPoints: string[] = [];
+    let examples: string[] = [];
+
+    let currentSection = '';
+
+    for (const section of sections) {
+      const trimmed = section.trim();
+      if (trimmed.startsWith('EXPLANATION:')) {
+        currentSection = 'explanation';
+        explanation = trimmed.replace('EXPLANATION:', '').trim();
+      } else if (trimmed.startsWith('KEY POINTS:')) {
+        currentSection = 'keypoints';
+        const pointsText = trimmed.replace('KEY POINTS:', '').trim();
+        keyPoints = pointsText.split('•').map(p => p.trim()).filter(p => p.length > 0);
+      } else if (trimmed.startsWith('EXAMPLES:')) {
+        currentSection = 'examples';
+        const examplesText = trimmed.replace('EXAMPLES:', '').trim();
+        examples = examplesText.split('•').map(e => e.trim()).filter(e => e.length > 0);
+      } else if (currentSection === 'explanation') {
+        explanation += '\n\n' + trimmed;
+      } else if (currentSection === 'keypoints' && keyPoints.length === 0) {
+        keyPoints = trimmed.split('•').map(p => p.trim()).filter(p => p.length > 0);
+      } else if (currentSection === 'examples' && examples.length === 0) {
+        examples = trimmed.split('•').map(e => e.trim()).filter(e => e.length > 0);
+      }
+    }
+
+    // Fallback if parsing fails
+    if (!explanation || keyPoints.length === 0 || examples.length === 0) {
+      console.warn('Failed to parse structured response, using fallback');
+      return getSimulatedExplanation(topicName);
+    }
+
+    return {
+      topic: topicName,
+      explanation: explanation,
+      keyPoints: keyPoints,
+      examples: examples,
+    };
+  } catch (error) {
+    console.error('Error parsing AI response:', error);
+    return getSimulatedExplanation(topicName);
+  }
+}
+
+/**
  * Generate an AI explanation for a math topic
- * Uses OpenAI API to create personalized, grade-appropriate explanations
- * 
+ * Uses Ollama offline LLM server for privacy and local processing
+ *
  * @param topicName - The name of the topic to explain
  * @param topicDescription - Brief description of the topic
  * @param userQuery - Optional user question or context (e.g., "I didn't understand it well")
@@ -69,27 +138,42 @@ export async function generateExplanation(
   userQuery?: string
 ): Promise<AIExplanation> {
   try {
-    // In production, this would call OpenAI API
-    // For now, we'll simulate with structured content
-    
-    const prompt = `You are a friendly math tutor. Explain "${topicName}" (${topicDescription}) in a clear, engaging way. ${
-      userQuery ? `The student said: "${userQuery}"` : ''
+    const prompt = `You are a friendly math tutor explaining mathematical concepts to students. Explain "${topicName}" (${topicDescription}) in a clear, engaging way. ${
+      userQuery ? `The student has a question: "${userQuery}" - address this in your explanation.` : ''
     }
-    
-    Provide:
-    1. A clear explanation (2-3 paragraphs)
-    2. 3-4 key points to remember
-    3. 2-3 concrete examples
-    
-    Use simple language and build intuition before formulas.`;
 
-    // Simulated AI response (in production, replace with actual API call)
-    const explanations = getSimulatedExplanation(topicName);
-    
-    return explanations;
+Structure your response in this exact format:
+EXPLANATION:
+[Write 2-3 paragraphs explaining the concept clearly and intuitively]
+
+KEY POINTS:
+• [Key point 1]
+• [Key point 2]
+• [Key point 3]
+• [Key point 4]
+
+EXAMPLES:
+• [Concrete example 1]
+• [Concrete example 2]
+• [Concrete example 3]
+
+Use simple language, build intuition before introducing formulas, and make it engaging and encouraging.`;
+
+    // Try Ollama first
+    const ollamaResponse = await callLocalLLM(prompt);
+
+    if (ollamaResponse) {
+      // Parse the structured response from Ollama
+      return parseAIFStructuredResponse(ollamaResponse, topicName);
+    }
+
+    // Fallback to simulated explanations if Ollama fails
+    console.warn('Ollama call failed, using simulated response');
+    return getSimulatedExplanation(topicName);
   } catch (error) {
     console.error('Error generating explanation:', error);
-    throw new Error('Failed to generate explanation');
+    // Fallback to simulated explanations
+    return getSimulatedExplanation(topicName);
   }
 }
 
@@ -294,7 +378,7 @@ export async function generateHint(question: string, options: string[]): Promise
 
 /**
  * Generate a conversational AI response to user's query
- * Uses OpenAI API for natural language conversations about math
+ * Uses Ollama offline LLM server for privacy and local processing
  *
  * @param userQuery - The user's question or message
  * @param isDiscovery - If true, returns short snippet for topic discovery
@@ -302,32 +386,20 @@ export async function generateHint(question: string, options: string[]): Promise
  */
 export async function generateChatResponse(userQuery: string, isDiscovery: boolean = false): Promise<string> {
   try {
-    if (!import.meta.env.VITE_OPENAI_API_KEY) {
-      // Fallback to simulated response if no API key
-      return simulateChatResponse(userQuery, isDiscovery);
-    }
-
     const systemPrompt = isDiscovery
       ? "You are a concise AI math tutor. Provide brief, clear explanations (1-2 sentences) that introduce mathematical concepts. Keep responses under 150 words. Focus on giving enough information to understand the concept without overwhelming."
       : "You are a friendly and knowledgeable AI math tutor. Help users understand mathematical concepts clearly and engagingly. Be conversational, encouraging, and use simple language. If the user asks about non-math topics, politely redirect back to math or explain how math relates to it.";
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        {
-          role: "system",
-          content: systemPrompt
-        },
-        {
-          role: "user",
-          content: userQuery
-        }
-      ],
-      max_tokens: isDiscovery ? 200 : 500,
-      temperature: 0.7
-    });
+    const prompt = `${systemPrompt}\n\nUser: ${userQuery}`;
+    const ollamaResponse = await callLocalLLM(prompt, isDiscovery);
 
-    return completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response right now.";
+    if (ollamaResponse) {
+      return ollamaResponse;
+    }
+
+    // Fallback to simulated response if Ollama fails
+    console.warn('Ollama call failed for chat, using simulated response');
+    return simulateChatResponse(userQuery, isDiscovery);
   } catch (error) {
     console.error('Error generating chat response:', error);
     return simulateChatResponse(userQuery, isDiscovery);

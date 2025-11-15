@@ -82,26 +82,26 @@ export default function GalaxyMap({ topics, onTopicClick, capturedTopics }: Gala
 
       {/* SVG for connection lines */}
       <svg className="absolute inset-0 w-full h-full pointer-events-none">
-        <g transform="translate(50%, 50%)">
-          {getConnectionLines().map((line, index) => {
-            const scale = 0.375; // Same scaling as topic positions
-            return (
-              <motion.line
-                key={index}
-                x1={line.x1 * scale}
-                y1={line.y1 * scale}
-                x2={line.x2 * scale}
-                y2={line.y2 * scale}
-                stroke={line.active ? '#3b82f6' : '#334155'}
-                strokeWidth={line.active ? 1.2 : 0.6}
-                strokeDasharray={line.active ? '0' : '3,3'}
-                initial={{ pathLength: 0, opacity: 0 }}
-                animate={{ pathLength: 1, opacity: line.active ? 0.5 : 0.25 }}
-                transition={{ duration: 1, delay: index * 0.08 }}
-              />
-            );
-          })}
-        </g>
+        {getConnectionLines().map((line, index) => {
+          const centerX = 500; // Center offset for positioning
+          const centerY = 300; // Center offset for positioning
+          const scale = 0.375; // Same scaling as topic positions
+          return (
+            <motion.line
+              key={index}
+              x1={centerX + line.x1 * scale}
+              y1={centerY + line.y1 * scale}
+              x2={centerX + line.x2 * scale}
+              y2={centerY + line.y2 * scale}
+              stroke={line.active ? '#3b82f6' : '#334155'}
+              strokeWidth={line.active ? 1.2 : 0.6}
+              strokeDasharray={line.active ? '0' : '3,3'}
+              initial={{ pathLength: 0, opacity: 0 }}
+              animate={{ pathLength: 1, opacity: line.active ? 0.5 : 0.25 }}
+              transition={{ duration: 1, delay: index * 0.08 }}
+            />
+          );
+        })}
       </svg>
 
       {/* Topic nodes container */}

@@ -34,32 +34,118 @@ npm run dev
 
 ### Setup Offline AI Tutoring (Llama 3.1 8B)
 
-#### Option 1: Using Ollama (Recommended)
+##### macOS 🎯
 
-1. **Install Ollama** for macOS:
-   ```bash
-   # Download and extract Ollama
-   curl -L https://ollama.ai/download/Ollama-darwin.zip -o ollama.zip
-   unzip ollama.zip
-   sudo mv ollama /usr/local/bin/
-   chmod +x /usr/local/bin/ollama
-   ```
+**Option A: Official Installer (Easiest)**
+1. Download the official installer: https://ollama.ai/download/Ollama-darwin.zip
+2. Double-click the downloaded file and follow the installation wizard
+3. Ollama is now installed and available in your Applications folder
 
-2. **Pull Llama 3.1 8B model**:
+**Option B: Manual Installation**
+```bash
+# Download Ollama archive
+curl -L https://ollama.ai/download/Ollama-darwin.zip -o ollama.zip
+unzip ollama.zip
+
+# Extract and install
+cp -r Ollama.app/Contents/Resources/ollama ~/.ollama/
+chmod +x ~/.ollama/ollama
+export PATH="$HOME/.ollama:$PATH"
+
+# Add to shell profile (e.g., ~/.zshrc or ~/.bash_profile)
+echo 'export PATH="$HOME/.ollama:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+##### Linux 🐧
+
+**Automated Installation (Recommended)**
+```bash
+curl -fsSL https://ollama.ai/install.sh | sh
+```
+
+**Manual Installation**
+```bash
+# Download latest release
+curl -L https://ollama.ai/download/ollama-linux-amd64 -o ollama
+chmod +x ollama
+sudo mv ollama /usr/local/bin/
+
+# For other architectures:
+# ARM64: ollama-linux-arm64
+# AMD64: ollama-linux-amd64
+```
+
+**Ubuntu/Debian Repository (Alternative)**
+```bash
+# Add Ollama repository
+sudo apt update
+sudo apt install -y ca-certificates curl
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Or using snap
+sudo snap install ollama
+```
+
+##### Windows 🪟
+
+**Option A: Official Windows Installer (Easiest)**
+1. Download: https://ollama.ai/download/OllamaSetup.exe
+2. Run the installer executable
+3. Follow the installation wizard
+4. Ollama will be added to your PATH automatically
+
+**Option B: PowerShell Installation**
+```powershell
+# Download and run installer
+irm https://ollama.ai/download/OllamaSetup.exe -OutFile OllamaSetup.exe
+.\OllamaSetup.exe
+```
+
+**Option C: Windows Subsystem for Linux (WSL)**
+```bash
+# Inside WSL terminal
+curl -fsSL https://ollama.ai/install.sh | sh
+```
+
+#### Setting up Llama 3.1 8B Model
+
+1. **Pull the Llama 3.1 8B model** (first time download takes ~5-10 minutes):
    ```bash
    ollama pull llama3.1:8b
    ```
 
-3. **Start Ollama server** (keep this running):
+2. **Start the Ollama server** (keep this terminal window open):
    ```bash
    ollama serve
    ```
-   This runs on `http://localhost:11434`
+   - Server runs on `http://localhost:11434`
+   - Math Guru will automatically connect to this address
 
-4. Run the Math Guru app:
+3. **Verify installation**:
+   ```bash
+   # Check if server is running
+   curl http://localhost:11434/api/version
+
+   # Test a simple prompt
+   curl -X POST http://localhost:11434/api/generate \
+     -H "Content-Type: application/json" \
+     -d '{"model": "llama3.1:8b", "prompt": "Hello!", "stream": false}'
+   ```
+
+4. **Run Math Guru**:
    ```bash
    npm run dev
    ```
+   Open http://localhost:5173 to start using AI-powered tutoring!
+
+#### System Requirements
+
+- **macOS**: macOS 11.0 or later, 8GB+ RAM recommended
+- **Linux**: Most modern distributions, 8GB+ RAM recommended
+- **Windows**: Windows 10 version 2004+ (21H2), 8GB+ RAM recommended
+
+Llama 3.1 8B requires ~5GB disk space and ~8GB RAM. Apple Silicon Macs get accelerated performance.
 
 #### Option 2: Alternative Local LLM Runners
 - **LM Studio** - Point API to `localhost:11434`
